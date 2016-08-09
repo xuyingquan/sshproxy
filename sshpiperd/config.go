@@ -1,24 +1,19 @@
-// Copyright 2014, 2015 tgic<farmer1992@gmail.com>. All rights reserved.
+// Copyright 2014, 2015 xyq<yingquan.xu@shatacloud.com>. All rights reserved.
 // this file is governed by MIT-license
 //
-// https://github.com/tg123/sshpiper
+// https://github.com/xuyingquan/sshpiper
 
 package main
 
 import (
-	"flag"
 	"fmt"
 	"log"
 	"os"
 	"runtime"
-	"strings"
 	"text/template"
-
-	"github.com/docker/docker/pkg/mflag"
-	"github.com/rakyll/globalconf"
 )
 
-var version = "DEV"
+var version = "1.0"
 var githash = "0000000000"
 
 var (
@@ -32,6 +27,8 @@ var (
 		Logfile          string
 		ShowVersion      bool
 		AllowBadUsername bool
+		RedisHost        string
+		RedisPort        uint
 	}{}
 
 	out = os.Stdout
@@ -51,8 +48,7 @@ Logging file          : {{.Logfile}}
 `[1:]))
 
 	versionTemplate = template.Must(template.New("ver").Parse(`
-SSHPiper ver: {{.VER}} by tgic<farmer1992@gmail.com>
-https://github.com/tg123/sshpiper
+SSHPiper ver: {{.VER}} by xyq <yingquan.xu@shatacloud.com>
 
 go runtime  : {{.GOVER}}
 git hash    : {{.GITHASH}}
@@ -77,69 +73,22 @@ func initLogger() {
 }
 
 func initConfig() {
-	configfile := mflag.String([]string{"-config"}, "/etc/sshpiperd.conf", "Config file path. Note: any option will be overwrite if it is set by commandline")
 
-	mflag.StringVar(&config.ListenAddr, []string{"l", "-listen_addr"}, "0.0.0.0", "Listening Address")
-	mflag.UintVar(&config.Port, []string{"p", "-port"}, 2222, "Listening Port")
-	mflag.StringVar(&config.WorkingDir, []string{"w", "-working_dir"}, "/var/sshpiper", "Working Dir")
-	mflag.StringVar(&config.PiperKeyFile, []string{"i", "-server_key"}, "/etc/ssh/ssh_host_rsa_key", "Key file for SSH Piper")
-	mflag.StringVar(&config.Challenger, []string{"c", "-challenger"}, "", "Additional challenger name, e.g. pam, emtpy for no additional challenge")
-	mflag.StringVar(&config.Logfile, []string{"-log"}, "", "Logfile path. Leave emtpy or any error occurs will fall back to stdout")
-	mflag.BoolVar(&config.AllowBadUsername, []string{"-allow_bad_username"}, false, "disable username check while search the working dir")
-	mflag.BoolVar(&config.ShowHelp, []string{"h", "-help"}, false, "Print help and exit")
-	mflag.BoolVar(&config.ShowVersion, []string{"-version"}, false, "Print version and exit")
-
-	mflag.Parse()
-
-	if _, err := os.Stat(*configfile); os.IsNotExist(err) {
-		if !mflag.IsSet("-config") {
-			*configfile = ""
-		} else {
-			logger.Fatalf("config file %v not found", *configfile)
-		}
-	}
-
-	gconf, err := globalconf.NewWithOptions(&globalconf.Options{
-		Filename:  *configfile,
-		EnvPrefix: "SSHPIPERD_",
-	})
-
-	if err != nil { // this error will happen only if file error
-		logger.Fatalln("load config file error %v: %v", *configfile, err)
-	}
-
-	// build a dummy flag set for globalconf to parse
-	fs := flag.NewFlagSet("", flag.ContinueOnError)
-
-	ignoreSet := make(map[string]bool)
-	mflag.Visit(func(f *mflag.Flag) {
-		for _, n := range f.Names {
-			ignoreSet[n] = true
-		}
-	})
-
-	// should be ignored
-	ignoreSet["-help"] = true
-	ignoreSet["-version"] = true
-
-	mflag.VisitAll(func(f *mflag.Flag) {
-		for _, n := range f.Names {
-			if len(n) < 2 {
-				continue
-			}
-
-			if !ignoreSet[n] {
-				n = strings.TrimPrefix(n, "-")
-				fs.Var(f.Value, n, f.Usage)
-			}
-		}
-	})
-
-	gconf.ParseSet("", fs)
+	config.ListenAddr, _ = conf.GetString("DEFAULT", "LISTEN_ADDR")
+	config.Port, _ = conf.GetUint("DEFAULT", "PORT")
+	config.WorkingDir, _ = conf.GetString("DEFAULT", "WORKING_DIR")
+	config.PiperKeyFile, _ = conf.GetString("DEFAULT", "SERVER_KEY")
+	config.Challenger, _ = conf.GetString("DEFAULT", "CHALLENGER")
+	config.Logfile, _ = conf.GetString("DEFAULT", "LOG")
+	config.AllowBadUsername, _ = conf.GetBool("DEFAULT", "ALLOW_BAD_USER")
+	config.ShowHelp, _ = conf.GetBool("DEFAULT", "SHOW_HELP")
+	config.ShowVersion, _ = conf.GetBool("DEFAULT", "SHOW_VERSION")
+	config.RedisHost, _ = conf.GetString("REDIS", "HOST")
+	config.RedisPort, _ = conf.GetUint("REDIS", "PORT")
 }
 
 func showHelp() {
-	mflag.Usage()
+	//	mflag.Usage()
 }
 
 func showVersion() {

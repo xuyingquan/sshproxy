@@ -1,7 +1,6 @@
-// Copyright 2014, 2015 tgic<farmer1992@gmail.com>. All rights reserved.
-// this file is governed by MIT-license
+// Copyright 2015, 2016 xyq <yingquan.xu@shatacloud.com>. All rights reserved.
 //
-// https://github.com/tg123/sshpiper
+// https://github.com/xuyingquan/sshpiper
 
 package main
 
@@ -14,10 +13,12 @@ import (
 
 	"github.com/tg123/sshpiper/ssh"
 	"github.com/tg123/sshpiper/sshpiperd/challenger"
+	"github.com/xuyingquan/goini"
 )
 
 var (
 	logger = log.New(os.Stdout, "", log.Ldate|log.Ltime)
+	conf   = goini.NewConfig("/etc/sshpiperd.conf")
 )
 
 func showHelpOrVersion() {
@@ -32,6 +33,7 @@ func showHelpOrVersion() {
 }
 
 func main() {
+
 	initConfig()
 	initTemplate()
 	initLogger()
@@ -41,10 +43,10 @@ func main() {
 
 	showConfig()
 
-	// TODO make this pluggable
+	// 实现FindUpstream和MapPublicKey
 	piper := &ssh.SSHPiperConfig{
-		FindUpstream: findUpstreamFromUserfile,
-		MapPublicKey: mapPublicKeyFromUserfile,
+		FindUpstream: findUpstreamFromRedis,
+		MapPublicKey: mapPublicKeyFromRedis,
 	}
 
 	if config.Challenger != "" {
@@ -61,11 +63,13 @@ func main() {
 	if err != nil {
 		logger.Fatalln(err)
 	}
+	//	fmt.Println(string(privateBytes))
 
 	private, err := ssh.ParsePrivateKey(privateBytes)
 	if err != nil {
 		logger.Fatalln(err)
 	}
+	//	fmt.Println(private.PublicKey().Marshal())
 
 	piper.AddHostKey(private)
 

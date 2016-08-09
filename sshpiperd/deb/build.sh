@@ -57,11 +57,11 @@ cp $BASEDIR/sshpiperd.conf $DIST_DIR/root/etc
 
 
 NAME=sshpiperd
-MAINTAINER=tgic
+MAINTAINER=xuyingquan
 CATEGORY=net
 DESCRIPTION="Username based SSH Reverse Proxy"
 LICENSE="The MIT License (MIT)"
-HOMEPAGE="https://github.com/tg123/sshpiper"
+HOMEPAGE="http://www.shatacloud.com"
 
 echo $BASEDIR
 

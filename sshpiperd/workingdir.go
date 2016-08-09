@@ -8,6 +8,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"crypto/md5"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -16,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/tg123/sshpiper/ssh"
+	"menteslibres.net/gosexy/redis"
 )
 
 type userFile string
@@ -26,6 +28,11 @@ var (
 	UserUpstreamFile       userFile = "sshpiper_upstream"
 
 	usernameRule *regexp.Regexp
+)
+
+var (
+	HOST = "127.0.0.1"
+	PORT = uint(6379)
 )
 
 func init() {
@@ -211,4 +218,98 @@ func mapPublicKeyFromUserfile(conn ssh.ConnMetadata, key ssh.PublicKey) (signer 
 	logger.Printf("public key auth failed user [%v] from [%v]", conn.User(), conn.RemoteAddr())
 
 	return nil, nil
+}
+
+func findUpstreamFromRedis(conn ssh.ConnMetadata) (net.Conn, string, error) {
+	user := conn.User()
+
+	if !checkUsername(user) {
+		return nil, "", fmt.Errorf("downstream is not using a valid username")
+	}
+
+	// 从redis中取出用户IP
+	client := redis.New()
+	if err := client.Connect(HOST, PORT); err != nil {
+		logger.Printf("connect redis server %s:%d failed.", HOST, PORT)
+		return nil, "", err
+	}
+	defer client.Quit()
+
+	userPrefix := "SSH_"
+	var buf bytes.Buffer
+	buf.WriteString(userPrefix)
+	buf.WriteString(user)
+
+	redisUser := buf.String()
+	addr, _ := client.Get(redisUser)
+
+	if addr == "" {
+		return nil, "", fmt.Errorf("empty addr")
+	}
+
+	logger.Printf("mapping user [%v] to [%v@%v]", user, user, addr)
+
+	c, err := net.Dial("tcp", addr)
+	if err != nil {
+		return nil, "", err
+	}
+
+	return c, user, nil
+}
+
+func mapPublicKeyFromRedis(conn ssh.ConnMetadata, key ssh.PublicKey) (signer ssh.Signer, err error) {
+	user := conn.User()
+
+	if !checkUsername(user) {
+		return nil, fmt.Errorf("downstream is not using a valid username")
+	}
+
+	defer func() { // print error when func exit
+		if err != nil {
+			logger.Printf("mapping private key error: %v, public key auth denied for [%v] from [%v]", err, user, conn.RemoteAddr())
+		}
+	}()
+
+	// 截取用户的publickey（编码后）,从redis中找到对应的公私钥对进行下一步认证
+	downKeyBytes := ssh.MarshalAuthorizedKey(key)
+	i := bytes.IndexAny(downKeyBytes, " \t")
+	if i == -1 {
+		logger.Printf("can't parse publickey.")
+		return nil, nil
+	}
+	downKeyBytes = bytes.TrimSpace(downKeyBytes[i+1:])
+	//	logger.Printf("publickey length: %d, key: %s", len(downKeyBytes), string(downKeyBytes))
+
+	// 对用户的publickey做MD5码
+	h := md5.New()
+	h.Write(downKeyBytes)
+	downKeyMD5 := fmt.Sprintf("%x", h.Sum(nil))
+	//	logger.Printf("md5: %s\n", downKeyMD5)
+
+	// 从redis中取出公私钥对
+	client := redis.New()
+	if err := client.Connect(HOST, PORT); err != nil {
+		logger.Printf("connect redis server %s:%d failed.", HOST, PORT)
+		return nil, err
+	}
+	defer client.Quit()
+
+	redisKey := ""
+	redisKey += "KEY_"
+	redisKey += user
+	mapPrivateKey, err := client.HGet(redisKey, downKeyMD5)
+	if err != nil {
+		logger.Printf("get private key from redis \"%s\":\"%s\" failure", redisKey, downKeyMD5)
+		return nil, err
+	}
+
+	var private ssh.Signer
+	private, err = ssh.ParsePrivateKey([]byte(mapPrivateKey))
+	if err != nil {
+		return nil, err
+	}
+
+	// in log may see this twice, one is for query the other is real sign again
+	logger.Printf("auth success, for user [%v] from [%v]", user, conn.RemoteAddr())
+	return private, nil
 }
