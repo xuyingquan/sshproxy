@@ -2,6 +2,8 @@
 *.o
 *.a
 *.so
+*.yml
+.gitignore
 
 # Folders
 _obj
